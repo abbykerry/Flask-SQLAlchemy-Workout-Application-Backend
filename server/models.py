@@ -49,6 +49,14 @@ class Exercise(db.Model):
             raise ValueError("Category must be at least 2 characters long")
         return value
 
+    # convert Exercise object to dictionary
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "category": self.category,
+            "equipment_needed": self.equipment_needed
+        }
 
 
 class Workout(db.Model):
@@ -85,6 +93,15 @@ class Workout(db.Model):
             raise ValueError("Workout duration must be greater than 0")
         return value
 
+    # convert Workout object to dictionary
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "date": str(self.date),
+            "duration_minutes": self.duration_minutes,
+            "notes": self.notes,
+            "exercises": [e.to_dict() for e in self.exercises]
+        }
 
 
 class WorkoutExercise(db.Model):
@@ -118,3 +135,14 @@ class WorkoutExercise(db.Model):
         if value is not None and value < 0:
             raise ValueError(f"{key} cannot be negative")
         return value
+
+    # convert WorkoutExercise object to dictionary
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "workout_id": self.workout_id,
+            "exercise_id": self.exercise_id,
+            "reps": self.reps,
+            "sets": self.sets,
+            "duration_seconds": self.duration_seconds
+        }
