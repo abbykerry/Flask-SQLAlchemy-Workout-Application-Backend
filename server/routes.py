@@ -1,11 +1,12 @@
 from flask import request, jsonify, abort
 from marshmallow import ValidationError
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError # Importing IntegrityError to handle database integrity issues, such as unique constraint violations
 
 from .models import db, Exercise, Workout, WorkoutExercise
 from .schemas import ExerciseSchema, WorkoutSchema, WorkoutExerciseSchema
 
-
+# This function defines the API routes for the workout application, eg error handlers and CRUD operations for exercises and workouts.
+# Uses Marshmallow for data validation and serialization, and SQLAlchemy for database interactions. 
 def register_routes(app):
     exercise_schema = ExerciseSchema()
     exercises_schema = ExerciseSchema(many=True)
@@ -19,11 +20,11 @@ def register_routes(app):
 
     @app.errorhandler(IntegrityError)
     def handle_integrity_error(error):
-        db.session.rollback()
+        db.session.rollback() # Roll back the session to prevent it from being in an inconsistent state after an integrity error
         message = 'Database integrity error.'
         if 'UNIQUE constraint failed: exercises.name' in str(error):
             message = 'Exercise name must be unique.'
-        if 'uix_workout_exercise' in str(error):
+        if 'uix_workout_exercise' in str(error): # Checking for the unique constraint violation on the workout_exercises association table. If this error occurs, it means that the same exercise is being added to the same workout more than once.
             message = 'This exercise is already attached to the workout.'
         return jsonify({'error': message}), 400
 
@@ -108,7 +109,7 @@ def register_routes(app):
         Workout.query.get_or_404(payload['workout_id'])
         Exercise.query.get_or_404(payload['exercise_id'])
 
-        association = WorkoutExercise(**payload)
+        association = WorkoutExercise(**payload) # **payload unpacks the validated data from the request and passes it as keyword arguments to the WorkoutExercise constructor.
         db.session.add(association)
         db.session.commit()
         return jsonify(workout_exercise_schema.dump(association)), 201
@@ -121,7 +122,7 @@ def register_routes(app):
 
         json_data['workout_id'] = workout_id
         json_data['exercise_id'] = exercise_id
-        payload = workout_exercise_schema.load(json_data)
+        payload = workout_exercise_schema.load(json_data) 
 
         association = WorkoutExercise(**payload)
         db.session.add(association)

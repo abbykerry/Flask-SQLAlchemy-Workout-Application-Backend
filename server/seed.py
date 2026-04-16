@@ -4,12 +4,13 @@ from .app import app
 from .models import db, Exercise, Workout, WorkoutExercise
 
 
-with app.app_context():
+with app.app_context(): # Context manager for the Flask application context
     print('Resetting database...')
 
-    db.drop_all()
-    db.create_all()
+    db.drop_all() #Useful for seeding fresh data without conflicts from existing records.
+    db.create_all() # Creates the database tables based on the defined models.
 
+    # Sample exercises to populate the database with some initial data for testing and development purposes.
     squat = Exercise(name='Squats', category='Strength', equipment_needed=False)
     pushups = Exercise(name='Push-ups', category='Strength', equipment_needed=False)
     running = Exercise(name='Running', category='Cardio', equipment_needed=False)
