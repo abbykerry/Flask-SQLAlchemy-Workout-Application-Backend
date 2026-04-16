@@ -1,146 +1,129 @@
-from flask import request, jsonify
-from models import db, Exercise, Workout, WorkoutExercise
+from flask import request, jsonify, abort
+from marshmallow import ValidationError
+from sqlalchemy.exc import IntegrityError
+
+from .models import db, Exercise, Workout, WorkoutExercise
+from .schemas import ExerciseSchema, WorkoutSchema, WorkoutExerciseSchema
 
 
 def register_routes(app):
+    exercise_schema = ExerciseSchema()
+    exercises_schema = ExerciseSchema(many=True)
+    workout_schema = WorkoutSchema()
+    workouts_schema = WorkoutSchema(many=True)
+    workout_exercise_schema = WorkoutExerciseSchema()
+
+    @app.errorhandler(ValidationError)
+    def handle_validation_error(error):
+        return jsonify({'errors': error.messages}), 400
+
+    @app.errorhandler(IntegrityError)
+    def handle_integrity_error(error):
+        db.session.rollback()
+        message = 'Database integrity error.'
+        if 'UNIQUE constraint failed: exercises.name' in str(error):
+            message = 'Exercise name must be unique.'
+        if 'uix_workout_exercise' in str(error):
+            message = 'This exercise is already attached to the workout.'
+        return jsonify({'error': message}), 400
+
+    @app.errorhandler(404)
+    def handle_not_found(error):
+        return jsonify({'error': 'Resource not found.'}), 404
+
+    @app.errorhandler(400)
+    def handle_bad_request(error):
+        description = getattr(error, 'description', 'Bad request.')
+        return jsonify({'error': description}), 400
 
     @app.route('/')
     def home():
-        return {"message": "Workout API is running"}
-
-
-    # ======================
-    # EXERCISES
-    # ======================
+        return jsonify({'message': 'Workout API is running'})
 
     @app.route('/exercises', methods=['GET'])
     def get_exercises():
-        exercises = Exercise.query.all()
+        exercises = Exercise.query.order_by(Exercise.name).all()
+        return jsonify(exercises_schema.dump(exercises)), 200
 
-        return jsonify([
-            {
-                "id": e.id,
-                "name": e.name,
-                "category": e.category,
-                "equipment_needed": e.equipment_needed
-            }
-            for e in exercises
-        ])
-
+    @app.route('/exercises/<int:exercise_id>', methods=['GET'])
+    def get_exercise(exercise_id):
+        exercise = Exercise.query.get_or_404(exercise_id)
+        return jsonify(exercise_schema.dump(exercise)), 200
 
     @app.route('/exercises', methods=['POST'])
     def create_exercise():
-        data = request.get_json()
+        json_data = request.get_json()
+        if not json_data:
+            abort(400, description='Request body must be JSON.')
 
-        # ✅ Validation
-        if not data or not data.get("name") or not data.get("category"):
-            return jsonify({"error": "Name and category are required"}), 400
-
-        exercise = Exercise(
-            name=data.get("name"),
-            category=data.get("category"),
-            equipment_needed=data.get("equipment_needed", False)
-        )
-
+        payload = exercise_schema.load(json_data)
+        exercise = Exercise(**payload)
         db.session.add(exercise)
         db.session.commit()
+        return jsonify(exercise_schema.dump(exercise)), 201
 
-        return jsonify({
-            "id": exercise.id,
-            "name": exercise.name,
-            "category": exercise.category,
-            "equipment_needed": exercise.equipment_needed
-        }), 201
-
-
-    # ======================
-    # WORKOUTS
-    # ======================
+    @app.route('/exercises/<int:exercise_id>', methods=['DELETE'])
+    def delete_exercise(exercise_id):
+        exercise = Exercise.query.get_or_404(exercise_id)
+        db.session.delete(exercise)
+        db.session.commit()
+        return jsonify({'message': 'Exercise deleted successfully.'}), 200
 
     @app.route('/workouts', methods=['GET'])
     def get_workouts():
-        workouts = Workout.query.all()
+        workouts = Workout.query.order_by(Workout.date.desc()).all()
+        return jsonify(workouts_schema.dump(workouts)), 200
 
-        return jsonify([
-            {
-                "id": w.id,
-                "date": str(w.date),
-                "duration_minutes": w.duration_minutes,
-                "notes": w.notes,
-                "exercises": [
-                    {
-                        "id": e.id,
-                        "name": e.name,
-                        "category": e.category,
-                        "equipment_needed": e.equipment_needed
-                    }
-                    for e in w.exercises
-                ]
-            }
-            for w in workouts
-        ])
-
+    @app.route('/workouts/<int:workout_id>', methods=['GET'])
+    def get_workout(workout_id):
+        workout = Workout.query.get_or_404(workout_id)
+        return jsonify(workout_schema.dump(workout)), 200
 
     @app.route('/workouts', methods=['POST'])
     def create_workout():
-        from datetime import datetime
+        json_data = request.get_json()
+        if not json_data:
+            abort(400, description='Request body must be JSON.')
 
-        data = request.get_json()
-
-        # ✅ Validation
-        if not data or not data.get("date") or not data.get("duration_minutes"):
-            return jsonify({"error": "Date and duration are required"}), 400
-
-        try:
-            date = datetime.strptime(data["date"], "%Y-%m-%d").date()
-        except ValueError:
-            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
-
-        workout = Workout(
-            date=date,
-            duration_minutes=data.get("duration_minutes"),
-            notes=data.get("notes")
-        )
-
+        payload = workout_schema.load(json_data)
+        workout = Workout(**payload)
         db.session.add(workout)
         db.session.commit()
+        return jsonify(workout_schema.dump(workout)), 201
 
-        return jsonify({
-            "id": workout.id,
-            "date": str(workout.date),
-            "duration_minutes": workout.duration_minutes,
-            "notes": workout.notes
-        }), 201
-
-
-    # ======================
-    # WORKOUT EXERCISES (JOIN TABLE)
-    # ======================
+    @app.route('/workouts/<int:workout_id>', methods=['DELETE'])
+    def delete_workout(workout_id):
+        workout = Workout.query.get_or_404(workout_id)
+        db.session.delete(workout)
+        db.session.commit()
+        return jsonify({'message': 'Workout deleted successfully.'}), 200
 
     @app.route('/workout_exercises', methods=['POST'])
     def add_workout_exercise():
-        data = request.get_json()
+        json_data = request.get_json()
+        if not json_data:
+            abort(400, description='Request body must be JSON.')
 
-        # ✅ Validation
-        if not data or not data.get("workout_id") or not data.get("exercise_id"):
-            return jsonify({"error": "workout_id and exercise_id are required"}), 400
+        payload = workout_exercise_schema.load(json_data)
+        Workout.query.get_or_404(payload['workout_id'])
+        Exercise.query.get_or_404(payload['exercise_id'])
 
-        link = WorkoutExercise(
-            workout_id=data.get("workout_id"),
-            exercise_id=data.get("exercise_id"),
-            reps=data.get("reps"),
-            sets=data.get("sets"),
-            duration_seconds=data.get("duration_seconds")
-        )
-
-        db.session.add(link)
+        association = WorkoutExercise(**payload)
+        db.session.add(association)
         db.session.commit()
+        return jsonify(workout_exercise_schema.dump(association)), 201
 
-        return jsonify({
-            "id": link.id,
-            "workout_id": link.workout_id,
-            "exercise_id": link.exercise_id,
-            "reps": link.reps,
-            "sets": link.sets,
-            "duration_seconds": link.duration_seconds
-        }), 201
+    @app.route('/workouts/<int:workout_id>/exercises/<int:exercise_id>/workout_exercises', methods=['POST'])
+    def add_exercise_to_workout(workout_id, exercise_id):
+        json_data = request.get_json() or {}
+        Workout.query.get_or_404(workout_id)
+        Exercise.query.get_or_404(exercise_id)
+
+        json_data['workout_id'] = workout_id
+        json_data['exercise_id'] = exercise_id
+        payload = workout_exercise_schema.load(json_data)
+
+        association = WorkoutExercise(**payload)
+        db.session.add(association)
+        db.session.commit()
+        return jsonify(workout_exercise_schema.dump(association)), 201
